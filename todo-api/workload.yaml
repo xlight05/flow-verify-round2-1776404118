@@ -1,0 +1,13 @@
+apiVersion: openchoreo.dev/v1alpha1
+metadata:
+  name: todo-api
+spec:
+  autoBuild: true
+  autoDeploy: true
+endpoints:
+  - name: http
+    port: 9090
+    type: HTTP
+    basePath: /
+    visibility:
+      - external

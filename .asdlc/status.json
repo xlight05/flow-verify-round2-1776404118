@@ -1,7 +1,7 @@
 {
-  "spec": "approved",
-  "design": "approved",
-  "plan": "approved",
-  "build": "approved",
+  "spec": "draft",
+  "design": "draft",
+  "plan": "draft",
+  "build": "draft",
   "review": "not-started"
 }

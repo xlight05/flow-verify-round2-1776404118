@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flow-verify-round2/todo-api/internal/handlers"
+	"github.com/flow-verify-round2/todo-api/internal/metrics"
 	"github.com/flow-verify-round2/todo-api/internal/middleware"
 	"github.com/flow-verify-round2/todo-api/internal/storage"
 )
@@ -25,11 +26,27 @@ func main() {
 
 	store := storage.New()
 	h := handlers.New(store)
+	reg := metrics.New()
 
 	mux := http.NewServeMux()
 	h.Register(mux)
+	mux.Handle("/metrics", reg.Handler())
 
-	handler := middleware.Recover(middleware.Logging(mux))
+	// /health and /metrics bypass auth.
+	openPaths := map[string]struct{}{
+		"/health":  {},
+		"/metrics": {},
+	}
+
+	handler := middleware.CORS(
+		reg.Middleware(
+			middleware.Recover(
+				middleware.Logging(
+					middleware.Auth(openPaths)(mux),
+				),
+			),
+		),
+	)
 
 	srv := &http.Server{
 		Addr:              ":" + port,

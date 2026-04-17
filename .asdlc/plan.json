@@ -1,11 +1,11 @@
 {
   "strategy": "Single-Phase",
-  "overview": "The design contains a single independent service with no dependencies, so a single-phase plan is sufficient. The todo-api is built directly as the foundation and sole component.",
+  "overview": "The design contains a single independent Go service with no dependencies, so it is implemented in a single foundational phase.",
   "phases": [
     {
       "phase": 1,
-      "name": "Foundation Service",
-      "description": "Implement the standalone todo REST API service. It has no dependencies and provides all required functionality.",
+      "name": "Foundation Services",
+      "description": "Implement the sole backend service exposing the Todo REST API.",
       "components": [
         {
           "name": "todo-api",
@@ -13,21 +13,21 @@
           "language": "Go",
           "deployment": "Docker",
           "responsibilities": [
-            "Expose REST endpoints for listing, creating, and deleting todos",
-            "Maintain thread-safe in-memory storage of todo items",
-            "Validate input and return structured JSON error responses",
-            "Provide a health check endpoint and request logging middleware",
-            "Generate unique, non-reused identifiers for todos"
+            "Expose Todo REST API including PATCH /todos/{id} for idempotent completion state transitions",
+            "Enforce bearer-token authentication and owner-based authorization",
+            "Validate request content type, JSON structure, and field types with structured error responses",
+            "Maintain a thread-safe in-memory todo store with safe concurrent updates",
+            "Expose /health and Prometheus /metrics endpoints with request count, latency, and error metrics"
           ],
-          "architectureContext": "Standalone HTTP service on port 9090 serving JSON clients directly. No upstream or downstream service dependencies; acts as the complete backend for todo management.",
+          "architectureContext": "Standalone Go HTTP service on port 9090 serving clients directly. No upstream dependencies; it is the sole backend for todo management and observability endpoints.",
           "keyConsiderations": [
-            "Use sync.RWMutex around the in-memory map for concurrent create/delete safety",
-            "Generate IDs via crypto/rand or google/uuid and track to prevent reuse",
-            "Sort GET /todos by created_at descending; return [] when empty",
-            "Trim and validate title; reject empty/whitespace with 400 JSON error",
-            "Multi-stage Dockerfile (golang:1.22 → distroless/static) exposing 9090; never leak internal errors"
+            "Use json.Decoder with DisallowUnknownFields for strict PATCH body parsing",
+            "Preserve existing completedAt on idempotent re-completion; clear when uncompleting",
+            "Per-resource locking (mutex map) or RWMutex to keep p95 latency under 300ms under concurrency",
+            "Never mutate id, owner, title, or createdAt during PATCH",
+            "Return structured {code,message,field} errors and avoid leaking internal errors on 500"
           ],
-          "apiContract": "openapi: 3.0.3\ninfo:\n  title: Todo API\n  version: 1.0.0\nservers:\n  - url: /\npaths:\n  /health:\n    get:\n      summary: Health check\n      responses:\n        '200':\n          description: OK\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  status: {type: string}\n  /todos:\n    get:\n      summary: List todos\n      responses:\n        '200':\n          description: Array of todos\n          content:\n            application/json:\n              schema:\n                type: array\n                items: {$ref: '#/components/schemas/Todo'}\n    post:\n      summary: Create todo\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: {$ref: '#/components/schemas/TodoCreate'}\n      responses:\n        '201':\n          description: Created\n          content:\n            application/json:\n              schema: {$ref: '#/components/schemas/Todo'}\n        '400':\n          description: Validation error\n          content:\n            application/json:\n              schema: {$ref: '#/components/schemas/Error'}\n  /todos/{id}:\n    delete:\n      summary: Delete todo\n      parameters:\n        - name: id\n          in: path\n          required: true\n          schema: {type: string}\n      responses:\n        '204':\n          description: Deleted\n        '404':\n          description: Not found\n          content:\n            application/json:\n              schema: {$ref: '#/components/schemas/Error'}\ncomponents:\n  schemas:\n    Todo:\n      type: object\n      properties:\n        id: {type: string}\n        title: {type: string}\n        description: {type: string}\n        done: {type: boolean}\n        created_at: {type: string, format: date-time}\n    TodoCreate:\n      type: object\n      required: [title]\n      properties:\n        title: {type: string}\n        description: {type: string}\n    Error:\n      type: object\n      properties:\n        error: {type: string}\n",
+          "apiContract": "openapi: 3.0.3\ninfo:\n  title: Todo API\n  version: 1.0.0\n  description: Todo management API with PATCH support for marking todos as completed.\nservers:\n  - url: http://localhost:9090\npaths:\n  /health:\n    get:\n      summary: Health check\n      responses:\n        '200':\n          description: OK\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  status: { type: string }\n  /todos:\n    get:\n      summary: List todos\n      security: [{ bearerAuth: [] }]\n      responses:\n        '200':\n          description: List\n          content:\n            application/json:\n              schema:\n                type: array\n                items: { $ref: '#/components/schemas/Todo' }\n    post:\n      summary: Create todo\n      security: [{ bearerAuth: [] }]\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n              type: object\n              required: [title]\n              properties:\n                title: { type: string }\n      responses:\n        '201':\n          description: Created\n          content:\n            application/json:\n              schema: { $ref: '#/components/schemas/Todo' }\n  /todos/{id}:\n    parameters:\n      - in: path\n        name: id\n        required: true\n        schema: { type: string }\n    get:\n      summary: Get todo\n      security: [{ bearerAuth: [] }]\n      responses:\n        '200':\n          description: OK\n          content:\n            application/json:\n              schema: { $ref: '#/components/schemas/Todo' }\n        '404': { $ref: '#/components/responses/NotFound' }\n    patch:\n      summary: Mark todo completion state\n      security: [{ bearerAuth: [] }]\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n              type: object\n              required: [completed]\n              additionalProperties: false\n              properties:\n                completed: { type: boolean }\n      responses:\n        '200':\n          description: Updated\n          content:\n            application/json:\n              schema: { $ref: '#/components/schemas/Todo' }\n        '400': { $ref: '#/components/responses/BadRequest' }\n        '401': { $ref: '#/components/responses/Unauthorized' }\n        '403': { $ref: '#/components/responses/Forbidden' }\n        '404': { $ref: '#/components/responses/NotFound' }\n        '415': { $ref: '#/components/responses/UnsupportedMediaType' }\n        '500': { $ref: '#/components/responses/ServerError' }\n  /metrics:\n    get:\n      summary: Prometheus metrics\n      responses:\n        '200':\n          description: OK\n          content:\n            text/plain: {}\ncomponents:\n  securitySchemes:\n    bearerAuth:\n      type: http\n      scheme: bearer\n  schemas:\n    Todo:\n      type: object\n      properties:\n        id: { type: string }\n        title: { type: string }\n        completed: { type: boolean }\n        completedAt: { type: string, format: date-time, nullable: true }\n        createdAt: { type: string, format: date-time }\n        owner: { type: string }\n    Error:\n      type: object\n      properties:\n        code: { type: string }\n        message: { type: string }\n        field: { type: string }\n  responses:\n    BadRequest:\n      description: Bad Request\n      content:\n        application/json:\n          schema: { $ref: '#/components/schemas/Error' }\n    Unauthorized:\n      description: Unauthorized\n      content:\n        application/json:\n          schema: { $ref: '#/components/schemas/Error' }\n    Forbidden:\n      description: Forbidden\n      content:\n        application/json:\n          schema: { $ref: '#/components/schemas/Error' }\n    NotFound:\n      description: Not Found\n      content:\n        application/json:\n          schema: { $ref: '#/components/schemas/Error' }\n    UnsupportedMediaType:\n      description: Unsupported Media Type\n      content:\n        application/json:\n          schema: { $ref: '#/components/schemas/Error' }\n    ServerError:\n      description: Internal Server Error\n      content:\n        application/json:\n          schema: { $ref: '#/components/schemas/Error' }\n",
           "dependencies": []
         }
       ]

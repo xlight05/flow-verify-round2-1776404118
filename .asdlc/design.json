@@ -1,0 +1,27 @@
+{
+  "overview": "A single-service REST API for managing todo items, implemented in Go with net/http. The service exposes list/create/delete endpoints over JSON with in-memory thread-safe storage and standard REST conventions.",
+  "requirements": [
+    "Todo has id, title (required, non-empty), optional description, status (default false), creation timestamp",
+    "GET /todos returns JSON array sorted newest first",
+    "POST /todos creates a todo, ignoring client id/status/timestamp, returns 201",
+    "DELETE /todos/{id} removes a todo, returns 404 if missing",
+    "JSON error responses with standard HTTP codes",
+    "System-generated unique, non-reused ids",
+    "Concurrency-safe create/delete",
+    "UTF-8 JSON, request logging, /health endpoint",
+    "Sub-500ms typical response times"
+  ],
+  "components": [
+    {
+      "name": "todo-api",
+      "componentType": "service",
+      "language": "Go",
+      "dependsOn": [],
+      "entrypoint": "deployment/service",
+      "buildpack": "docker",
+      "appPath": "/todo-api",
+      "openAPISpec": "openapi: 3.0.3\ninfo:\n  title: Todo API\n  version: 1.0.0\nservers:\n  - url: /\npaths:\n  /health:\n    get:\n      summary: Health check\n      responses:\n        '200':\n          description: OK\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  status: {type: string}\n  /todos:\n    get:\n      summary: List todos\n      responses:\n        '200':\n          description: Array of todos\n          content:\n            application/json:\n              schema:\n                type: array\n                items: {$ref: '#/components/schemas/Todo'}\n    post:\n      summary: Create todo\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: {$ref: '#/components/schemas/TodoCreate'}\n      responses:\n        '201':\n          description: Created\n          content:\n            application/json:\n              schema: {$ref: '#/components/schemas/Todo'}\n        '400':\n          description: Validation error\n          content:\n            application/json:\n              schema: {$ref: '#/components/schemas/Error'}\n  /todos/{id}:\n    delete:\n      summary: Delete todo\n      parameters:\n        - name: id\n          in: path\n          required: true\n          schema: {type: string}\n      responses:\n        '204':\n          description: Deleted\n        '404':\n          description: Not found\n          content:\n            application/json:\n              schema: {$ref: '#/components/schemas/Error'}\ncomponents:\n  schemas:\n    Todo:\n      type: object\n      properties:\n        id: {type: string}\n        title: {type: string}\n        description: {type: string}\n        done: {type: boolean}\n        created_at: {type: string, format: date-time}\n    TodoCreate:\n      type: object\n      required: [title]\n      properties:\n        title: {type: string}\n        description: {type: string}\n    Error:\n      type: object\n      properties:\n        error: {type: string}\n",
+      "componentAgentInstructions": "Implement a Go service using net/http on port 9090. Routes: GET /health returns {\"status\":\"ok\"}; GET /todos returns JSON array of todos sorted by created_at desc (empty array if none); POST /todos parses JSON body {title, description}, rejects with 400 and {\"error\":\"...\"} if body malformed or title missing/empty/whitespace; generate id using crypto/rand or google/uuid (ensure uniqueness and never reuse), set done=false, created_at=time.Now().UTC(), return 201 with full todo; DELETE /todos/{id} returns 204 on success, 404 with {\"error\":\"not found\"} if id missing. Use an in-memory map protected by sync.RWMutex for thread safety. Add logging middleware for method, path, status, and duration. All responses Content-Type application/json; charset=utf-8. Do not expose internal error details—log them and return generic 500 {\"error\":\"internal server error\"}. Include a Dockerfile (multi-stage golang:1.22 → distroless/static) exposing 9090."
+    }
+  ]
+}

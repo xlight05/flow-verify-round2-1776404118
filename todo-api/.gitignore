@@ -1,0 +1,23 @@
+# Binaries
+/todo-api
+/bin/
+/dist/
+/out/
+*.exe
+*.test
+*.out
+
+# Go build cache / modules
+vendor/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Logs
+*.log
+.logs/
+
+# Local MCP config (not source)
+.mcp-config.json
